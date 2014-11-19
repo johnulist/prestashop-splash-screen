@@ -1,0 +1,4 @@
+#splashScreenContainer { display:none; }
+p.splashScreenChoice { width:205px; margin:25px auto 0; }
+p.splashScreenChoice .btn-success,
+p.splashScreenChoice .btn-danger { width:100px; }
