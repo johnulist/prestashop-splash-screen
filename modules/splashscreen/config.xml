@@ -2,7 +2,7 @@
 <module>
 	<name>splashscreen</name>
 	<displayName><![CDATA[Splash screen]]></displayName>
-	<version><![CDATA[0.1]]></version>
+	<version><![CDATA[0.2]]></version>
 	<description><![CDATA[Show a splash screen when entering the shop.]]></description>
 	<author><![CDATA[cornug]]></author>
 	<tab><![CDATA[front_office_features]]></tab>

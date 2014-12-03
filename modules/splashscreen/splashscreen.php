@@ -4,12 +4,12 @@ class splashscreen extends Module
 {
     private $_html = '';
     private $_postErrors = array();
-
+    
     public function __construct()
     {
         $this->name = 'splashscreen';
         $this->tab = 'front_office_features';
-        $this->version = '0.1';
+        $this->version = '0.2';
         $this->author = 'cornug';
         
         $this->bootstrap = true;
@@ -22,23 +22,21 @@ class splashscreen extends Module
     public function install()
     {
         if (!parent::install() ||
-            !$this->registerHook('header') ||
-            !Configuration::updateValue('SPLASHSCREEN_COOKIE', md5(time())) ||
-            !Configuration::updateValue('SPLASHSCREEN_EXPIRES', 7) ||
-            !Configuration::updateValue('SPLASHSCREEN_ID_CMS', 2) ||
-            !Configuration::updateValue('SPLASHSCREEN_URL', 'http://www.google.com/'))
-            return false;
+            !$this->registerHook('header'))
+                return false;
+        
+        $this->initConfiguration();
+        
         return true;
     }
     
     public function uninstall()
     {
-        if (!parent::uninstall() ||
-            !Configuration::deleteByName('SPLASHSCREEN_COOKIE') ||
-            !Configuration::deleteByName('SPLASHSCREEN_EXPIRES') ||
-            !Configuration::deleteByName('SPLASHSCREEN_ID_CMS') ||
-            !Configuration::deleteByName('SPLASHSCREEN_URL'))
+        if (!parent::uninstall())
             return false;
+        
+        $this->deleteConfiguration();
+        
         return true;
     }
     
@@ -48,9 +46,11 @@ class splashscreen extends Module
         
         if (Tools::isSubmit('submitSplashScreen'))
         {
-            $splashscreen_expires = strval(Tools::getValue('SPLASHSCREEN_EXPIRES'));
-            $splashscreen_id_cms = (int)Tools::getValue('SPLASHSCREEN_ID_CMS');
-            $splashscreen_url = strval(Tools::getValue('SPLASHSCREEN_URL'));
+            $settings = $this->getConfiguration();
+            
+            $splashscreen_expires = strval(Tools::getValue('expires'));
+            $splashscreen_id_cms = (int)Tools::getValue('id_cms');
+            $splashscreen_url = strval(Tools::getValue('url'));
             
             if(!filter_var($splashscreen_url, FILTER_VALIDATE_URL))
                 $output .= $this->displayError($this->l('Redirect URL must be a valid URL'));
@@ -58,15 +58,17 @@ class splashscreen extends Module
             elseif(!Validate::isInt($splashscreen_expires) ||
                 $splashscreen_expires < 1 ||
                 $splashscreen_expires > 365)
-                $output .= $this->displayError($this->l('Cookie expiration must be a number of days between 1 and 365'));
+                    $output .= $this->displayError($this->l('Cookie expiration must be a number of days between 1 and 365'));
             
             else {
-                if($splashscreen_expires != (int)Configuration::get('SPLASHSCREEN_EXPIRES')) {
-                    Configuration::updateValue('SPLASHSCREEN_COOKIE', md5(time()));
+                if($splashscreen_expires != (int)$settings['expires']) {
+                    $settings['cookie'] = md5(time());
                 }
-                Configuration::updateValue('SPLASHSCREEN_EXPIRES', $splashscreen_expires);
-                Configuration::updateValue('SPLASHSCREEN_ID_CMS', $splashscreen_id_cms);
-                Configuration::updateValue('SPLASHSCREEN_URL', $splashscreen_url);
+                $settings['expires'] = $splashscreen_expires;
+                $settings['id_cms'] = $splashscreen_id_cms;
+                $settings['url'] = $splashscreen_url;
+                
+                $this->updateConfiguration($settings);
                 $output .= $this->displayConfirmation($this->l('Settings updated'));
             }
         }
@@ -88,7 +90,7 @@ class splashscreen extends Module
                         'type' => 'select',
                         'label' => $this->l('CMS page to display'),
                         'desc' => $this->l('The content of the selected page will be displayed in the pop-up.'),
-                        'name' => 'SPLASHSCREEN_ID_CMS',
+                        'name' => 'id_cms',
                         'required' => true,
                         'options' => array(
                             'query' => $options,
@@ -99,7 +101,7 @@ class splashscreen extends Module
                     array(
                         'type' => 'text',
                         'label' => $this->l('Redirect URL'),
-                        'name' => 'SPLASHSCREEN_URL',
+                        'name' => 'url',
                         'class' => 'fixed-width-xl',
                         'required' => true,
                         'desc' => $this->l('The user will be returned to this page if the user clicks on Exit.'),
@@ -107,7 +109,7 @@ class splashscreen extends Module
                     array(
                         'type' => 'text',
                         'label' => $this->l('Cookie expiration'),
-                        'name' => 'SPLASHSCREEN_EXPIRES',
+                        'name' => 'expires',
                         'class' => 'fixed-width-xs',
                         'suffix' => $this->l('days'),
                         'maxlength' => 3,
@@ -140,16 +142,33 @@ class splashscreen extends Module
         return $helper->generateForm(array($fields_form));
     }
     
-    public function getConfigFieldsValues()
+    public function hookHeader($params)
     {
-        return array(
-            'SPLASHSCREEN_EXPIRES' => Tools::getValue('SPLASHSCREEN_EXPIRES', Configuration::get('SPLASHSCREEN_EXPIRES')),
-            'SPLASHSCREEN_ID_CMS' => Tools::getValue('SPLASHSCREEN_ID_CMS', Configuration::get('SPLASHSCREEN_ID_CMS')),
-            'SPLASHSCREEN_URL' => Tools::getValue('SPLASHSCREEN_URL', Configuration::get('SPLASHSCREEN_URL'))
-        );
+        $settings = $this->getConfiguration();
+        
+        $this->context->controller->addJqueryPlugin('cooki-plugin');
+        $this->context->controller->addJqueryPlugin('cookie-plugin');
+        $this->context->controller->addJqueryPlugin('fancybox');
+        
+        $this->context->controller->addJS($this->_path.'js/splashscreen.js');
+        $this->context->controller->addCSS($this->_path.'css/splashscreen.css');
+        
+        $result = Db::getInstance()->getRow('SELECT * FROM '._DB_PREFIX_.'cms_lang WHERE id_cms = '.(int)$settings['id_cms'].' AND id_lang='.(int)$this->context->language->id);
+        $splashscreen_text = $result['content'];
+        
+        $this->smarty->assign(array(
+            'splashscreen_cookie' => $settings['cookie'],
+            'splashscreen_expires' => (int)$settings['expires'],
+            'splashscreen_text' => $splashscreen_text,
+            'splashscreen_url' => $settings['url'],
+            'splashscreen_enter' => $this->l('Enter'),
+            'splashscreen_exit' => $this->l('Exit'),
+        ));
+        
+        return $this->display(__FILE__, '/splashscreen.tpl');
     }
     
-    public function listCMSPages()
+    protected function listCMSPages()
     {
         $cms = CMS::listCms($this->context->language->id);
         $list = array();
@@ -163,27 +182,40 @@ class splashscreen extends Module
         return $list;
     }
     
-    public function hookHeader($params)
+    protected function getConfigFieldsValues()
     {
-        $this->context->controller->addJqueryPlugin('cooki-plugin');
-        $this->context->controller->addJqueryPlugin('cookie-plugin');
-        $this->context->controller->addJqueryPlugin('fancybox');
+        $settings = $this->getConfiguration();
         
-        $this->context->controller->addJS($this->_path.'js/splashscreen.js');
-        $this->context->controller->addCSS($this->_path.'css/splashscreen.css');
-        
-        $result = Db::getInstance()->getRow('SELECT * FROM '._DB_PREFIX_.'cms_lang WHERE id_cms = '.(int)Configuration::get('SPLASHSCREEN_ID_CMS').' AND id_lang='.(int)$this->context->language->id);
-        $splashscreen_text = $result['content'];
-        
-        $this->smarty->assign(array(
-            'splashscreen_cookie' => Configuration::get('SPLASHSCREEN_COOKIE'),
-            'splashscreen_expires' => (int)Configuration::get('SPLASHSCREEN_EXPIRES'),
-            'splashscreen_text' => $splashscreen_text,
-            'splashscreen_url' => Configuration::get('SPLASHSCREEN_URL'),
-            'splashscreen_enter' => $this->l('Enter'),
-            'splashscreen_exit' => $this->l('Exit'),
-        ));
-        
-        return $this->display(__FILE__, '/splashscreen.tpl');
+        return array(
+            'expires' => Tools::getValue('expires', $settings['expires']),
+            'id_cms' => Tools::getValue('id_cms', $settings['id_cms']),
+            'url' => Tools::getValue('url', $settings['url'])
+        );
+    }
+    
+    protected function initConfiguration()
+    {    
+        $settings = array(
+            'cookie' => md5(time),
+            'expires' => 7,
+            'id_cms' => 2,
+            'url' => 'http://www.google.com/'
+        );
+        Configuration::updateValue('SPLASHSCREEN_SETTINGS', serialize($settings));
+    }
+    
+    protected function getConfiguration()
+    {
+        $settings = unserialize(Configuration::get('SPLASHSCREEN_SETTINGS'));
+        return $settings;
+    }
+    
+    protected function updateConfiguration($settings)
+    {
+        Configuration::updateValue('SPLASHSCREEN_SETTINGS', serialize($settings));
+    }
+    
+    protected function deleteConfiguration(){
+        Configuration::deleteByName('SPLASHSCREEN_SETTINGS');
     }
 }
